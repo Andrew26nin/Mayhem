@@ -19,10 +19,22 @@ class PubSubMessage:
     instance_name = attr.ib()
     message_id = attr.ib(repr=False)
     hostname = attr.ib(repr=False, init=False)
+    restarted = attr.ib(repr=False, default=False)
 
     def __attrs_post_init__(self):
         self.hostname = f"{self.instance_name}.example.net"
 
+
+async def restart_host(msg):
+    await asyncio.sleep(random.random())
+    msg.restarted=True
+    logging.info(f'Restarted {msg.hostname}')
+
+async def consume(queue):
+    while True:
+        msg=await queue.get()
+        logging.info(f"Consumed {msg}")
+        asyncio.create_task(restart_host(msg))
 
 async def publish(queue):
     choices = string.ascii_lowercase + string.digits
@@ -32,7 +44,7 @@ async def publish(queue):
         instance_name = f"cattle-{host_id}"
         msg = PubSubMessage(message_id=msg_id, instance_name=instance_name)
         asyncio.create_task(queue.put(msg))
-        logging.info(f"Published message {msg}")
+        logging.debug(f"Published message {msg}")
         await asyncio.sleep(random.random())
 
 
@@ -41,6 +53,7 @@ def main():
     loop = asyncio.get_event_loop()
     try:
         loop.create_task(publish(queue))
+        loop.create_task(consume(queue))
         loop.run_forever()
     except KeyboardInterrupt:
         logging.info("Process interrupted")
