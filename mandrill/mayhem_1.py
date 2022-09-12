@@ -1,9 +1,11 @@
 import asyncio
 import logging
-import queue
-from random import random
+import random
+
 import string
 
+
+import attr
 
 logging.basicConfig(
     level=logging.INFO,
@@ -11,9 +13,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-
-import attr
-import random
 
 @attr.s
 class PubSubMessage:
@@ -24,28 +23,40 @@ class PubSubMessage:
     def __attrs_post_init__(self):
         self.hostname = f"{self.instance_name}.example.net"
 
+
 async def publish(queue, n):
-    choices=string.ascii_lowercase+string.digits
-    for x in range(1,n+1):
-        host_id=''.join(random.choices(choices, k=4))
-        instance_name = f'cattle-{host_id}'
-        msg=PubSubMessage(message_id=x, instance_name=instance_name)
+    choices = string.ascii_lowercase + string.digits
+    for x in range(1, n + 1):
+        host_id = "".join(random.choices(choices, k=4))
+        instance_name = f"cattle-{host_id}"
+        msg = PubSubMessage(message_id=x, instance_name=instance_name)
         await queue.put(msg)
-        logging.info(f'Published {x} of {n} messages')
+        logging.info(f"Published {x} of {n} messages")
     await queue.put(None)
+
 
 async def consume(queue):
     while True:
         msg = await queue.get()
         if msg is None:
             break
-        logging.info(f'Consumed {msg}')
+        logging.info(f"Consumed {msg}")
         await asyncio.sleep(random.random())
+
 
 def main():
     queue = asyncio.Queue()
-    asyncio.run(publish(queue,5))
-    asyncio.run(consume(queue))
+    loop = asyncio.get_event_loop()
+    try:
+        loop.create_task(publish(queue, 5))
+        loop.create_task(consume(queue))
+        loop.run_forever()
+    except KeyboardInterrupt:
+        logging.info("Process interrupted")
+    finally:
+        loop.close()
+        logging.info("Successfully shutdown the Mayhem service")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
