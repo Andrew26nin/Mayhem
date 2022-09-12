@@ -1,9 +1,8 @@
 import asyncio
 import logging
 import random
-import uuid
 import string
-
+import uuid
 
 import attr
 
@@ -22,12 +21,14 @@ class PubSubMessage:
     restarted = attr.ib(repr=False, default=False)
     saved = attr.ib(repr=False, default=False)
     acked = attr.ib(repr=False, default=False)
+    extended_cnt = attr.ib(repr=False, default=0)
 
     def __attrs_post_init__(self):
         self.hostname = f"{self.instance_name}.example.net"
 
 
-async def cleanup(msg):
+async def cleanup(msg, event):
+    await event.wait()
     await asyncio.sleep(random.random())
     msg.acked = True
     logging.info(f"Done. Acked {msg}")
@@ -39,15 +40,25 @@ async def save(msg):
     logging.info(f"Saved {msg} into database")
 
 
-async def handle_message(msg):
-    await asyncio.gather(save(msg), restart_host(msg))
-    await cleanup(msg)
-
-
 async def restart_host(msg):
     await asyncio.sleep(random.random())
     msg.restarted = True
     logging.info(f"Restarted {msg.hostname}")
+
+
+async def extend(msg: PubSubMessage, event: asyncio.Event):
+    while not event.is_set():
+        msg.extended_cnt += 1
+        logging.info(f"Extended deadline by 3 seconds for {msg}")
+        await asyncio.sleep(2)
+
+
+async def handle_message(msg):
+    event = asyncio.Event()
+    asyncio.create_task(extend(msg, event))
+    asyncio.create_task(cleanup(msg, event))
+    await asyncio.gather(save(msg), restart_host(msg))
+    event.set()
 
 
 async def consume(queue):
