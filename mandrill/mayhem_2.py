@@ -20,21 +20,31 @@ class PubSubMessage:
     message_id = attr.ib(repr=False)
     hostname = attr.ib(repr=False, init=False)
     restarted = attr.ib(repr=False, default=False)
+    saved = attr.ib(repr=False, default=False)
 
     def __attrs_post_init__(self):
         self.hostname = f"{self.instance_name}.example.net"
 
 
+async def save(msg):
+    await asyncio.sleep(random.random())
+    msg.saved = True
+    logging.info(f"Saved {msg} into database")
+
+
 async def restart_host(msg):
     await asyncio.sleep(random.random())
-    msg.restarted=True
-    logging.info(f'Restarted {msg.hostname}')
+    msg.restarted = True
+    logging.info(f"Restarted {msg.hostname}")
+
 
 async def consume(queue):
     while True:
-        msg=await queue.get()
+        msg = await queue.get()
         logging.info(f"Consumed {msg}")
+        asyncio.create_task(save(msg))
         asyncio.create_task(restart_host(msg))
+
 
 async def publish(queue):
     choices = string.ascii_lowercase + string.digits
