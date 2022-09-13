@@ -61,10 +61,17 @@ async def handle_message(msg):
     await asyncio.gather(save(msg), restart_host(msg))
     event.set()
 
+def handle_exception(loop, context):
+    msg = context.get('exception', context["message"])
+    logging.error(f"Caught exception: {msg}")
+    logging.info("Shutting down...")
+    asyncio.create_task(shutdown(loop=loop))
 
 async def consume(queue):
     while True:
         msg = await queue.get()
+        if random.randrange(1, 5) == 3:
+            raise Exception(f"Could not consume {msg}")
         logging.info(f"Consumed {msg}")
         asyncio.create_task(handle_message(msg))
 
@@ -81,8 +88,9 @@ async def publish(queue):
         await asyncio.sleep(random.random())
 
 
-async def shutdown(signal, loop):
-    logging.info(f"Received exit signal {signal.name}...")
+async def shutdown(loop, signal=None):
+    if signal:
+        logging.info(f"Received exit signal {signal.name}...")
     logging.info("Closing database connections")
     logging.info("Nacking outstanding messages")
     tasks = [t for t in asyncio.all_tasks() if t is not
@@ -102,6 +110,7 @@ def main():
     signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
     for s in signals:
         loop.add_signal_handler(s, lambda s=s: asyncio.create_task(shutdown(s, loop)))
+    loop.set_exception_handler(handle_exception)
 
     try:
         loop.create_task(publish(queue))
