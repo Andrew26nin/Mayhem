@@ -39,8 +39,8 @@ async def cleanup(msg, event):
 
 async def save(msg):
     await asyncio.sleep(random.random())
-    if random.randrange(1, 5)==3:
-        raise Exception(f"Could not save {msg}")
+    # if random.randrange(1, 5)==3:
+    #     raise Exception(f"Could not save {msg}")
     msg.saved = True
     logging.info(f"Saved {msg} into database")
 
