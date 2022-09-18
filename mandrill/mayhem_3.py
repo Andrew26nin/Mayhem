@@ -1,11 +1,13 @@
+import asyncio
 import logging
 import queue
 import random
 import string
 import time
-
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+import signal
 import attr
-
 
 # NB: Using f-strings with log messages may not be ideal since no matter
 # what the log level is set at, f-strings will always be evaluated
@@ -27,8 +29,8 @@ class PubSubMessage:
     def __attrs_post_init__(self):
         self.hostname = f"{self.instance_name}.example.net"
 
-import uuid
-import time
+
+
 
 def publish_sync(queue):
     choices = string.ascii_lowercase + string.digits
@@ -58,8 +60,8 @@ def consume_sync(queue):
         time.sleep(random.random())
         # time.sleep(1)
 
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
+
+
 
 async def publish(executor, queue):
     logging.info('Starting publisher')
@@ -77,10 +79,34 @@ async def consume(executor, queue):
     # asyncio.ensure_future(asyncio.gather(*futures, return_exceptions=True))
     asyncio.ensure_future(loop.run_in_executor(executor, consume_sync, queue))
 
+async def shutdown(loop, executor, signal=None):
+    if signal:
+        logging.info(f"Received exit signal {signal.name}...")
+    logging.info("Nacking outstanding messages")
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    [task.cancel() for task in tasks]
+    logging.info(f"Cancelling {len(tasks)} outstanding tasks")
+    await asyncio.gather(*tasks, return_exceptions=True)
+    logging.info("Shutting down executor")
+    executor.shutdown(wait=False)
+
+    logging.info(f"Releasing {len(executor._threads)} threads from executor")
+    for thread in executor._threads:
+        try:
+            thread._tstate_lock.release()
+        except Exception:
+            pass
+
+    logging.info(f"Flushing metrics")
+    loop.stop()
+
 def main():
+    q = queue.Queue()
     executor = ThreadPoolExecutor()
     loop=asyncio.get_event_loop()
-    q = queue.Queue()
+    signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
+    for s in signals:
+        loop.add_signal_handler(s, lambda s=s: asyncio.create_task(shutdown(loop, executor, signal=s)))
     try:
         loop.create_task(publish(executor, q))
         loop.create_task(consume(executor, q))
