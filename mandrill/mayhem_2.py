@@ -13,6 +13,8 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
+class RestartFailed(Exception):
+    pass
 
 @attr.s
 class PubSubMessage:
@@ -37,12 +39,16 @@ async def cleanup(msg, event):
 
 async def save(msg):
     await asyncio.sleep(random.random())
+    if random.randrange(1, 5)==3:
+        raise Exception(f"Could not save {msg}")
     msg.saved = True
     logging.info(f"Saved {msg} into database")
 
 
 async def restart_host(msg):
     await asyncio.sleep(random.random())
+    if random.randrange(1, 5)==3:
+        raise RestartFailed(f"Could not restart {msg.hostname}")
     msg.restarted = True
     logging.info(f"Restarted {msg.hostname}")
 
@@ -53,12 +59,19 @@ async def extend(msg: PubSubMessage, event: asyncio.Event):
         logging.info(f"Extended deadline by 3 seconds for {msg}")
         await asyncio.sleep(2)
 
+def handle_results(results, msg):
+    for result in results:
+        if isinstance(result, RestartFailed):
+            logging.error(f"Retrying for failure to restart: {msg.hostname}")
+        elif isinstance(result, Exception):
+            logging.error(f"Handling general error: {result}")
 
 async def handle_message(msg):
     event = asyncio.Event()
     asyncio.create_task(extend(msg, event))
     asyncio.create_task(cleanup(msg, event))
-    await asyncio.gather(save(msg), restart_host(msg))
+    results = await asyncio.gather(save(msg), restart_host(msg), return_exceptions=True)
+    handle_results(results=results, msg=msg)
     event.set()
 
 def handle_exception(loop, context):
@@ -70,8 +83,8 @@ def handle_exception(loop, context):
 async def consume(queue):
     while True:
         msg = await queue.get()
-        if random.randrange(1, 5) == 3:
-            raise Exception(f"Could not consume {msg}")
+        # if random.randrange(1, 5) == 3:
+        #     raise Exception(f"Could not consume {msg}")
         logging.info(f"Consumed {msg}")
         asyncio.create_task(handle_message(msg))
 
