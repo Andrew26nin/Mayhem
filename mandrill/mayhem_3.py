@@ -8,7 +8,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 import signal
 import attr
-
+import functools
 # NB: Using f-strings with log messages may not be ideal since no matter
 # what the log level is set at, f-strings will always be evaluated
 # whereas the old form ("foo %s" % "bar") is lazily-evaluated.
@@ -100,6 +100,12 @@ async def shutdown(loop, executor, signal=None):
     logging.info(f"Flushing metrics")
     loop.stop()
 
+def handle_exception(executor, loop, context):
+    msg=context.get("exception", context["message"])
+    logging.error(f"Caught exception: {msg}")
+    logging.info("Shutting down...")
+    asyncio.create_task(shutdown(loop, executor))
+
 def main():
     q = queue.Queue()
     executor = ThreadPoolExecutor()
@@ -107,6 +113,8 @@ def main():
     signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
     for s in signals:
         loop.add_signal_handler(s, lambda s=s: asyncio.create_task(shutdown(loop, executor, signal=s)))
+    handle_exc_func=functools.partial(handle_exception, executor)
+    loop.set_exception_handler(handle_exc_func)
     try:
         loop.create_task(publish(executor, q))
         loop.create_task(consume(executor, q))
